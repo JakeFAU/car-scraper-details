@@ -13,6 +13,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     make = req.params.get('make')
     model = req.params.get('model')
     year = req.params.get('year')
+    logging.info(f'{make}-{model}-{year}')
     if not make:
         try:
             req_body = req.get_json()
@@ -21,7 +22,9 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         else:
             make = req_body.get('make')
             model = req_body.get('model')
-            year = req_body.get('year)')
+            year = req_body.get('year')
+
+            logging.info(f'{make}-{model}-{year}')
 
     if make:
         resp = recalls(make, model, year)
