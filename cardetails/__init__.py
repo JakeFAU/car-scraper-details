@@ -5,6 +5,7 @@ import json
 import azure.functions as func
 
 from typing import Dict, Any
+from bs4 import BeautifulSoup
 
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
@@ -28,7 +29,12 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
 
     if make:
         resp = recalls(make, model, year)
-        return func.HttpResponse(json.dumps(resp))
+        dets = cardata(make,model,year)
+        rev = review(make,model,year)
+        results = {"details" : dets,
+                   "review" : rev,
+                   "recalls" : resp}
+        return func.HttpResponse(json.dumps(results))
     else:
         return func.HttpResponse(
              "This HTTP triggered function executed successfully. Pass a name in the query string or in the request body for a personalized response.",
@@ -42,4 +48,33 @@ def recalls(make: str, model: str, year:str) -> Dict[str,Any]:
     resp = requests.get(url)
     j = resp.json()
     results = j['results']
-    return results
+    recallDict = {} 
+    for i, r in enumerate(results):
+        recallDict["recall_" + str(i)] = r
+    return recallDict
+
+def cardata(make: str, model: str, year:str) -> Dict[str,Any]:
+    url = f'https://www.cars.com/research/{make}-{model}-{year}/'
+    page = requests.get(url)
+    soup = BeautifulSoup(page.text, 'html.parser')
+    p_tag = soup.find(class_='specs-list key-specs-list')
+    details = ['body','mpg','seats','dims','drivetrain']
+    resultDict = {}
+    for i, li in enumerate(p_tag.find_all('li')):
+        resultDict[details[i]] = "".join(li.text.splitlines()).strip(" ")
+        resultDict[details[i]] = resultDict[details[i]].replace('View similar vehicles','')
+        resultDict[details[i]] = resultDict[details[i]].replace('See how it ranks','') 
+    m_tag = soup.find(class_='msrp-container')
+    resultDict['MSRP'] = m_tag.findChild('div').text
+    print(resultDict)
+    return resultDict
+
+def review(make: str, model: str, year:str) -> Dict[str,Any]:
+    url = f'https://www.cars.com/research/{make}-{model}-{year}/'
+    page = requests.get(url)
+    soup = BeautifulSoup(page.text, 'html.parser')
+    e_tag = soup.find(class_='expert-review')
+    p_tag = e_tag.findChild('p')
+    result_dict = {}
+    result_dict['summary'] = p_tag.text
+    return result_dict
