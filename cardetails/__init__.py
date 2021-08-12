@@ -1,8 +1,12 @@
 import logging
 import requests
 import json
+import os
 
 import azure.functions as func
+import uuid
+from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient, __version__
+
 
 from typing import Dict, Any
 from bs4 import BeautifulSoup
@@ -28,18 +32,33 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             logging.info(f'{make}-{model}-{year}')
 
     if make:
-        resp = recalls(make, model, year)
-        dets = cardata(make,model,year)
-        rev = review(make,model,year)
-        results = {"details" : dets,
-                   "review" : rev,
-                   "recalls" : resp}
-        return func.HttpResponse(json.dumps(results))
+        results = check_blob(make, model, year)
+        return func.HttpResponse(results) 
     else:
         return func.HttpResponse(
              "This HTTP triggered function executed successfully. Pass a name in the query string or in the request body for a personalized response.",
              status_code=200
         )
+
+def check_blob(make: str, model: str, year:str) -> Dict[str,Any]:
+    connect_str = os.getenv('AZURE_STORAGE_CONNECTION_STRING')
+    blob_service_client = BlobServiceClient.from_connection_string(connect_str)
+    filename = f'{make}/{model}/{year}/data.json'
+    try:
+        blob_client = blob_service_client.get_blob_client(container="cardata", blob=filename)
+        if blob_client.exists():
+            return blob_client.download_blob().readall()
+        else:
+            resp = recalls(make, model, year)
+            dets = cardata(make,model,year)
+            rev = review(make,model,year)
+            results = {"details" : dets,
+                        "review" : rev,
+                        "recalls" : resp}  
+            blob_client.upload_blob(json.dumps(results))
+            return json.dumps(results)
+    except Exception as ex:
+        return json.dumps({"error": str(ex)})
 
 
 
@@ -74,6 +93,8 @@ def review(make: str, model: str, year:str) -> Dict[str,Any]:
     page = requests.get(url)
     soup = BeautifulSoup(page.text, 'html.parser')
     e_tag = soup.find(class_='expert-review')
+    if e_tag is None:
+        return {}
     p_tag = e_tag.findChild('p')
     result_dict = {}
     result_dict['summary'] = p_tag.text
